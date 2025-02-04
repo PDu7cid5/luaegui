@@ -8,11 +8,11 @@ edition = "2021"
 [features]
 
 [dependencies]
-egui = "0.26"
-mlua = { version = "0.9", features = ["luau-vector4"] }
+egui = "0.31.0"
+mlua = { version = "0.10.3", features = ["luau-vector4"] }
 
 [dev-dependencies]
-egui_commonmark = "0.13"
+eframe = "0.31.0"
 
 # disable default glfw features on emscripten
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]

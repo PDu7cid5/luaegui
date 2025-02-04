@@ -1,10 +1,5 @@
 use egui::{
-    epaint::Shadow,
-    load::SizedTexture,
-    style::{Spacing, WidgetVisuals},
-    Align, Align2, Area, CentralPanel, Color32, Context, Direction, Frame, Id, LayerId, Layout,
-    Margin, Order, PointerButton, Pos2, Rect, RichText, Rounding, Sense, SidePanel, Stroke, Style,
-    TextStyle, TextureHandle, TopBottomPanel, Ui, Vec2, WidgetText, Window,
+    epaint::Shadow, load::SizedTexture, style::{Spacing, WidgetVisuals}, Align, Align2, Area, CentralPanel, Color32, Context, CornerRadius, Direction, Frame, Id, LayerId, Layout, Margin, Order, PointerButton, Pos2, Rect, RichText, Sense, SidePanel, Stroke, Style, TextStyle, TextureHandle, TopBottomPanel, Ui, Vec2, WidgetText, Window
 };
 use mlua::{
     AnyUserData, Function, Lua, MultiValue, Result, Table, UserDataFields, UserDataMethods,
@@ -30,7 +25,7 @@ pub fn register_egui_bindings(lua: &Lua) -> mlua::Result<()> {
     Pos2::add_to_lua(lua, egui_table)?;
     Rect::add_to_lua(lua, egui_table)?;
     RichText::add_to_lua(lua, egui_table)?;
-    Rounding::add_to_lua(lua, egui_table)?;
+    CornerRadius::add_to_lua(lua, egui_table)?;
     Sense::add_to_lua(lua, egui_table)?;
     Stroke::add_to_lua(lua, egui_table)?;
     TextStyle::add_to_lua(lua, egui_table)?;
@@ -75,12 +70,12 @@ impl LuaHelperTrait for Id {
     fn from_lua(value: Value) -> Result<Self> {
         Ok(match value {
             Value::Nil => Id::NULL,
-            Value::String(s) => Id::NULL.with(s.to_str().unwrap_or_default()),
+//            Value::String(s) => Id::NULL.with(s.to_str().unwrap_or_default()),
             Value::UserData(u) => {
                 *u.borrow()
                     .map_err(|_e| mlua::Error::FromLuaConversionError {
                         from: "Value",
-                        to: "Id",
+                        to: "Id".to_string(),
                         message: Some(
                             "The variant of value is not suitable for converting to Id".to_string(),
                         ),
@@ -89,7 +84,7 @@ impl LuaHelperTrait for Id {
             _ => {
                 return Err(mlua::Error::FromLuaConversionError {
                     from: "Value",
-                    to: "Id",
+                    to: "Id".to_string(),
                     message: Some(
                         "The variant of value is not suitable for converting to Id".to_string(),
                     ),
@@ -103,7 +98,7 @@ impl LuaHelperTrait for Id {
     }
 
     fn add_to_lua(lua: &Lua, egui_table: &Table) -> Result<()> {
-        let id: Table<'_> = lua.create_table()?;
+        let id: Table = lua.create_table()?;
         lua.register_userdata_type(|reg: &mut UserDataRegistry<Id>| {
             reg.add_method("with", |lua, this, value: Value| {
                 lua.create_any_userdata(match value {
@@ -114,7 +109,7 @@ impl LuaHelperTrait for Id {
                     _ => {
                         return Err(mlua::Error::FromLuaConversionError {
                             from: "value",
-                            to: "hash_for_egui_id",
+                            to: "hash_for_egui_id".to_string(),
                             message: None,
                         })
                     }
@@ -138,7 +133,7 @@ fn add_widget_visuals(lua: &Lua, egui_table: &Table) -> mlua::Result<()> {
             Color32::to_lua(this.weak_bg_fill, lua)
         });
         reg.add_field_method_get("bg_stroke", |lua, this| Stroke::to_lua(this.bg_stroke, lua));
-        reg.add_field_method_get("rounding", |lua, this| Rounding::to_lua(this.rounding, lua));
+        reg.add_field_method_get("corner_radius", |lua, this| CornerRadius::to_lua(this.corner_radius, lua));
         reg.add_field_method_get("fg_stroke", |lua, this| Stroke::to_lua(this.fg_stroke, lua));
         reg.add_field_method_get("expansion", |_, this| Ok(this.expansion));
 
@@ -154,8 +149,8 @@ fn add_widget_visuals(lua: &Lua, egui_table: &Table) -> mlua::Result<()> {
             this.bg_stroke = Stroke::from_lua(value)?;
             Ok(())
         });
-        reg.add_field_method_set("rounding", |_, this, value: Value| {
-            this.rounding = Rounding::from_lua(value)?;
+        reg.add_field_method_set("corner_radius", |_, this, value: Value| {
+            this.corner_radius = CornerRadius::from_lua(value)?;
             Ok(())
         });
         reg.add_field_method_set("fg_stroke", |_, this, value: Value| {
@@ -299,9 +294,9 @@ fn add_response(lua: &Lua) -> mlua::Result<()> {
         reg.add_method("drag_delta", |lua, this, ()| {
             Ok(Vec2::to_lua(this.drag_delta(), lua))
         });
-        reg.add_method("drag_released", |_, this, ()| Ok(this.drag_released()));
-        reg.add_method("drag_released_by", |_, this, value: Value| {
-            Ok(this.drag_released_by(PointerButton::from_lua(value)?))
+        reg.add_method("drag_stopped", |_, this, ()| Ok(this.drag_stopped()));
+        reg.add_method("drag_stopped_by", |_, this, value: Value| {
+            Ok(this.drag_stopped_by(PointerButton::from_lua(value)?))
         });
         reg.add_method("drag_started", |_, this, ()| Ok(this.drag_started()));
         reg.add_method("drag_started_by", |_, this, value: Value| {
@@ -497,7 +492,7 @@ fn add_ui(lua: &Lua, _egui_table: &Table) -> mlua::Result<()> {
             result
         });
         reg.add_method_mut("child_ui", |lua, this, (max_rect, layout): (Value, UserDataRef<Layout>)| {
-            let ui =  this.child_ui(LuaHelperTrait::from_lua(max_rect)?, *layout);
+            let ui =  this.child_ui(LuaHelperTrait::from_lua(max_rect)?, *layout, None);
             lua.create_any_userdata(ui)
         });
         // requires impl Hash for Value smh
@@ -959,18 +954,14 @@ impl LuaHelperTrait for Sense {
         match value {
             Value::Integer(i) => {
                 let i = i as u8;
-                let click = 0 != (i & 1);
-                let drag = 0 != (i & (1 << 1));
-                let focusable = 0 != (i & (1 << 2));
-                Ok(Self {
-                    click,
-                    drag,
-                    focusable,
-                })
+                match Sense::from_bits(i) {
+                    Some(sense) => Ok(sense),
+                    None => Ok(Sense::empty())
+                }
             }
             _ => Err(mlua::Error::FromLuaConversionError {
                 from: "luavalue",
-                to: "pointerbutton",
+                to: "pointerbutton".to_string(),
                 message: None,
             }),
         }
@@ -978,13 +969,13 @@ impl LuaHelperTrait for Sense {
 
     fn to_lua(value: Self, _lua: &Lua) -> Result<Value> {
         let mut u = 0u8;
-        if value.click {
+        if value.senses_click() {
             u &= 1;
         }
-        if value.drag {
+        if value.senses_drag() {
             u &= 1 << 1;
         }
-        if value.focusable {
+        if value.is_focusable() {
             u &= 1 << 2;
         }
         Ok(Value::Integer(u as _))
@@ -1021,11 +1012,11 @@ impl LuaHelperTrait for Margin {
         let margin = lua.create_table()?;
         margin.set(
             "same",
-            lua.create_function(|lua, margin: f32| Margin::to_lua(Margin::same(margin), lua))?,
+            lua.create_function(|lua, margin: i8| Margin::to_lua(Margin::same(margin), lua))?,
         )?;
         margin.set(
             "symmetric",
-            lua.create_function(|lua, (x, y): (f32, f32)| {
+            lua.create_function(|lua, (x, y): (i8, i8)| {
                 Margin::to_lua(Margin::symmetric(x, y), lua)
             })?,
         )?;
@@ -1052,16 +1043,16 @@ impl LuaHelperTrait for Margin {
             lua.create_function(|_, value: Value| Ok(Margin::from_lua(value)?.is_same()))?,
         )?;
 
-        egui_table.set("rounding", margin)?;
+        egui_table.set("corner_radius", margin)?;
         Ok(())
     }
     fn from_lua(value: Value) -> Result<Self> {
         Ok(match value {
             Value::Table(t) => {
-                let left: f32 = t.get("left")?;
-                let right: f32 = t.get("right")?;
-                let top: f32 = t.get("top")?;
-                let bottom: f32 = t.get("bottom")?;
+                let left: i8 = t.get("left")?;
+                let right: i8 = t.get("right")?;
+                let top: i8 = t.get("top")?;
+                let bottom: i8 = t.get("bottom")?;
                 Self {
                     left,
                     right,
@@ -1072,7 +1063,7 @@ impl LuaHelperTrait for Margin {
             _ => {
                 return Err(mlua::Error::FromLuaConversionError {
                     from: "luavalue",
-                    to: "pointerbutton",
+                    to: "pointerbutton".to_string(),
                     message: None,
                 })
             }
@@ -1103,7 +1094,7 @@ impl LuaHelperTrait for TextStyle {
                     )))
                 }
             }),
-            Value::String(s) => Ok(Self::Name(s.to_str().unwrap_or_default().into())),
+            Value::String(s) => Ok(Self::Name(s.to_string_lossy().into())),
             _ => {
                 return Err(mlua::Error::RuntimeError(format!(
                     "invalid type to convert to TextStyle enum variants"
@@ -1135,51 +1126,51 @@ impl LuaHelperTrait for TextStyle {
         Ok(())
     }
 }
-impl LuaHelperTrait for Rounding {
+impl LuaHelperTrait for CornerRadius {
     fn add_to_lua(lua: &Lua, egui_table: &Table) -> mlua::Result<()> {
-        let rounding = lua.create_table()?;
-        rounding.set(
+        let corner_radius = lua.create_table()?;
+        corner_radius.set(
             "same",
-            lua.create_function(|lua, radius: f32| Rounding::to_lua(Rounding::same(radius), lua))?,
+            lua.create_function(|lua, radius: u8| CornerRadius::to_lua(CornerRadius::same(radius), lua))?,
         )?;
-        rounding.set(
+        corner_radius.set(
             "none",
-            lua.create_function(|lua, ()| Rounding::to_lua(Rounding::ZERO, lua))?,
+            lua.create_function(|lua, ()| CornerRadius::to_lua(CornerRadius::ZERO, lua))?,
         )?;
-        rounding.set(
+        corner_radius.set(
             "is_same",
-            lua.create_function(|_, rounding: Value| -> mlua::Result<bool> {
-                Ok(Rounding::from_lua(rounding)?.is_same())
+            lua.create_function(|_, corner_radius: Value| -> mlua::Result<bool> {
+                Ok(CornerRadius::from_lua(corner_radius)?.is_same())
             })?,
         )?;
-        rounding.set(
+        corner_radius.set(
             "atleast",
-            lua.create_function(|lua, (value, min): (Value, f32)| {
-                Rounding::to_lua(Rounding::from_lua(value)?.at_least(min), lua)
+            lua.create_function(|lua, (value, min): (Value, u8)| {
+                CornerRadius::to_lua(CornerRadius::from_lua(value)?.at_least(min), lua)
             })?,
         )?;
-        rounding.set(
+        corner_radius.set(
             "atmost",
-            lua.create_function(|lua, (value, max): (Value, f32)| {
-                Rounding::to_lua(Rounding::from_lua(value)?.at_most(max), lua)
+            lua.create_function(|lua, (value, max): (Value, u8)| {
+                CornerRadius::to_lua(CornerRadius::from_lua(value)?.at_most(max), lua)
             })?,
         )?;
-        egui_table.set("rounding", rounding)?;
+        egui_table.set("corner_radius", corner_radius)?;
         Ok(())
     }
     fn from_lua(value: Value) -> Result<Self> {
         Ok(match value {
             Value::Table(t) => {
-                let nw: f32 = t.get("nw")?;
-                let ne: f32 = t.get("ne")?;
-                let sw: f32 = t.get("sw")?;
-                let se: f32 = t.get("se")?;
+                let nw: u8 = t.get("nw")?;
+                let ne: u8 = t.get("ne")?;
+                let sw: u8 = t.get("sw")?;
+                let se: u8 = t.get("se")?;
                 Self { nw, ne, sw, se }
             }
             _ => {
                 return Err(mlua::Error::FromLuaConversionError {
                     from: "luavalue",
-                    to: "pointerbutton",
+                    to: "pointerbutton".to_string(),
                     message: None,
                 })
             }
@@ -1222,7 +1213,7 @@ impl LuaHelperTrait for Rect {
             _ => {
                 return Err(mlua::Error::FromLuaConversionError {
                     from: "luavalue",
-                    to: "pointerbutton",
+                    to: "pointerbutton".to_string(),
                     message: None,
                 })
             }
@@ -1287,7 +1278,7 @@ impl LuaHelperTrait for Color32 {
             _ => {
                 return Err(mlua::Error::FromLuaConversionError {
                     from: "luavalue",
-                    to: "pointerbutton",
+                    to: "pointerbutton".to_string(),
                     message: None,
                 })
             }
@@ -1307,7 +1298,7 @@ impl LuaHelperTrait for Pos2 {
             Value::Vector(v) => Ok(Self { x: v.x(), y: v.y() }),
             _ => Err(mlua::Error::FromLuaConversionError {
                 from: "luavalue",
-                to: "pos2",
+                to: "pos2".to_string(),
                 message: None,
             }),
         }
@@ -1346,7 +1337,7 @@ impl LuaHelperTrait for Stroke {
             }
             _ => Err(mlua::Error::FromLuaConversionError {
                 from: "luavalue",
-                to: "pos2",
+                to: "pos2".to_string(),
                 message: None,
             }),
         }
@@ -1365,7 +1356,7 @@ impl LuaHelperTrait for Vec2 {
             Value::Vector(v) => Ok(Self { x: v.x(), y: v.y() }),
             _ => Err(mlua::Error::FromLuaConversionError {
                 from: "luavalue",
-                to: "pos2",
+                to: "pos2".to_string(),
                 message: None,
             }),
         }
@@ -1413,7 +1404,7 @@ impl LuaHelperTrait for Align2 {
                 _ => {
                     return Err(mlua::Error::FromLuaConversionError {
                         from: "luavalue",
-                        to: "pointerbutton",
+                        to: "pointerbutton".to_string(),
                         message: Some("integer value out of range".to_string()),
                     })
                 }
@@ -1421,7 +1412,7 @@ impl LuaHelperTrait for Align2 {
             _ => {
                 return Err(mlua::Error::FromLuaConversionError {
                     from: "luavalue",
-                    to: "pointerbutton",
+                    to: "pointerbutton".to_string(),
                     message: None,
                 })
             }
@@ -1453,7 +1444,7 @@ impl LuaHelperTrait for Align {
                 _ => {
                     return Err(mlua::Error::FromLuaConversionError {
                         from: "luavalue",
-                        to: "pointerbutton",
+                        to: "pointerbutton".to_string(),
                         message: Some("integer value out of range".to_string()),
                     })
                 }
@@ -1461,7 +1452,7 @@ impl LuaHelperTrait for Align {
             _ => {
                 return Err(mlua::Error::FromLuaConversionError {
                     from: "luavalue",
-                    to: "pointerbutton",
+                    to: "pointerbutton".to_string(),
                     message: None,
                 })
             }
@@ -1507,7 +1498,7 @@ impl LuaHelperTrait for PointerButton {
                 _ => {
                     return Err(mlua::Error::FromLuaConversionError {
                         from: "luavalue",
-                        to: "pointerbutton",
+                        to: "pointerbutton".to_string(),
                         message: Some("integer value out of range".to_string()),
                     })
                 }
@@ -1515,7 +1506,7 @@ impl LuaHelperTrait for PointerButton {
             _ => {
                 return Err(mlua::Error::FromLuaConversionError {
                     from: "luavalue",
-                    to: "pointerbutton",
+                    to: "pointerbutton".to_string(),
                     message: None,
                 })
             }
@@ -1553,7 +1544,7 @@ impl LuaHelperTrait for Direction {
                 _ => {
                     return Err(mlua::Error::FromLuaConversionError {
                         from: "luavalue",
-                        to: "pointerbutton",
+                        to: "pointerbutton".to_string(),
                         message: Some("integer value out of range".to_string()),
                     })
                 }
@@ -1561,7 +1552,7 @@ impl LuaHelperTrait for Direction {
             _ => {
                 return Err(mlua::Error::FromLuaConversionError {
                     from: "luavalue",
-                    to: "pointerbutton",
+                    to: "pointerbutton".to_string(),
                     message: None,
                 })
             }
@@ -1580,7 +1571,7 @@ impl LuaHelperTrait for Direction {
 impl LuaHelperTrait for WidgetText {
     fn from_lua(value: Value) -> Result<Self> {
         match value {
-            Value::String(s) => Ok(s.to_str().unwrap_or_default().into()),
+            Value::String(s) => Ok(s.to_string_lossy().into()),
             Value::UserData(u) => {
                 if let Ok(u) = u.borrow::<WidgetText>() {
                     Ok(u.clone())
@@ -1589,14 +1580,14 @@ impl LuaHelperTrait for WidgetText {
                 } else {
                     return Err(mlua::Error::FromLuaConversionError {
                         from: "userdata",
-                        to: "widgettext",
+                        to: "widgettext".to_string(),
                         message: None,
                     });
                 }
             }
             _ => Err(mlua::Error::FromLuaConversionError {
                 from: "luavalue",
-                to: "widgettext",
+                to: "widgettext".to_string(),
                 message: None,
             }),
         }
@@ -1615,14 +1606,14 @@ impl LuaHelperTrait for WidgetText {
 impl LuaHelperTrait for RichText {
     fn from_lua(value: Value) -> Result<Self> {
         match value {
-            Value::String(s) => Ok(s.to_str().unwrap_or_default().into()),
+            Value::String(s) => Ok(s.to_string_lossy().into()),
             Value::UserData(u) => {
                 if let Ok(u) = u.borrow::<RichText>() {
                     Ok(u.clone())
                 } else {
                     Err(mlua::Error::FromLuaConversionError {
                         from: "userdata",
-                        to: "widgettext",
+                        to: "widgettext".to_string(),
                         message: None,
                     })
                 }
@@ -1630,7 +1621,7 @@ impl LuaHelperTrait for RichText {
             Value::Table(_t) => {
                 Err(mlua::Error::FromLuaConversionError {
                     from: "table",
-                    to: "widgettext",
+                    to: "widgettext".to_string(),
                     message: None,
                 })
                 // if let Ok(text) =  t.get::<_, String>("text")  {
@@ -1641,7 +1632,7 @@ impl LuaHelperTrait for RichText {
             }
             _ => Err(mlua::Error::FromLuaConversionError {
                 from: "luavalue",
-                to: "widgettext",
+                to: "widgettext".to_string(),
                 message: None,
             }),
         }
@@ -1670,18 +1661,18 @@ impl LuaHelperTrait for RichText {
 }
 
 #[derive(Hash, Debug)]
-enum LuaHashable<'lua> {
-    LuaString(mlua::String<'lua>),
+enum LuaHashable {
+    LuaString(mlua::String),
     Integer(i32),
 }
-impl<'lua> LuaHashable<'lua> {
-    fn from_lua(value: Value<'lua>) -> Result<Self> {
+impl LuaHashable {
+    fn from_lua(value: Value) -> Result<Self> {
         match value {
             Value::Integer(i) => Ok(Self::Integer(i)),
             Value::String(i) => Ok(Self::LuaString(i)),
             _ => Err(mlua::Error::FromLuaConversionError {
                 from: "value",
-                to: "LuaHashable",
+                to: "LuaHashable".to_string(),
                 message: None,
             }),
         }
@@ -1706,7 +1697,7 @@ fn add_frame(lua: &Lua, egui_table: &Table) -> Result<()> {
     let frame = lua.create_table()?;
     frame.set(
         "none",
-        lua.create_function(|lua, _: ()| lua.create_any_userdata(Frame::none()))?,
+        lua.create_function(|lua, _: ()| lua.create_any_userdata(Frame::NONE))?,
     )?;
     frame.set(
         "group",
@@ -1765,7 +1756,7 @@ fn add_frame(lua: &Lua, egui_table: &Table) -> Result<()> {
             Margin::to_lua(this.outer_margin, lua)
         });
         frame.add_field_method_get("rounding", |lua, this| -> Result<Value> {
-            Rounding::to_lua(this.rounding, lua)
+            CornerRadius::to_lua(this.corner_radius, lua)
         });
         frame.add_field_method_get("shadow", |lua, this| -> Result<Value> {
             Ok(Value::UserData(lua.create_any_userdata(this.shadow)?))
@@ -1797,10 +1788,10 @@ fn add_frame(lua: &Lua, egui_table: &Table) -> Result<()> {
 }
 fn add_shadow(lua: &Lua, _egui_table: &Table) -> Result<()> {
     lua.register_userdata_type(|shadow: &mut UserDataRegistry<Shadow>| {
-        shadow.add_field_method_get("extrusion", |_, this| Ok(this.extrusion));
+        shadow.add_field_method_get("spread", |_, this| Ok(this.spread));
         shadow.add_field_method_get("color", |lua, this| Color32::to_lua(this.color, lua));
-        shadow.add_field_method_set("extrusion", |_, this, extrusion: f32| {
-            this.extrusion = extrusion;
+        shadow.add_field_method_set("spread", |_, this, extrusion: u8| {
+            this.spread = extrusion;
             Ok(())
         });
         shadow.add_field_method_set("color", |_lua, this, color: Value| {
@@ -1815,7 +1806,6 @@ impl LuaHelperTrait for Order {
         match value {
             Value::Integer(i) => Ok(match i {
                 0 => Self::Background,
-                1 => Self::PanelResizeLine,
                 2 => Self::Middle,
                 3 => Self::Foreground,
                 4 => Self::Tooltip,
@@ -1823,14 +1813,14 @@ impl LuaHelperTrait for Order {
                 _ => {
                     return Err(mlua::Error::FromLuaConversionError {
                         from: "Integer",
-                        to: "Order",
+                        to: "Order".to_string(),
                         message: Some("Integer value none of the enum variants".to_string()),
                     })
                 }
             }),
             _ => Err(mlua::Error::FromLuaConversionError {
                 from: "value",
-                to: "Order",
+                to: "Order".to_string(),
                 message: None,
             }),
         }
@@ -1839,7 +1829,6 @@ impl LuaHelperTrait for Order {
     fn to_lua(value: Self, _lua: &Lua) -> Result<Value> {
         Ok(Value::Integer(match value {
             Order::Background => 0,
-            Order::PanelResizeLine => 1,
             Order::Middle => 2,
             Order::Foreground => 3,
             Order::Tooltip => 4,
@@ -1850,7 +1839,6 @@ impl LuaHelperTrait for Order {
     fn add_to_lua(lua: &Lua, egui_table: &Table) -> Result<()> {
         let order = lua.create_table()?;
         order.set("Background", Self::to_lua(Self::Background, lua)?)?;
-        order.set("PanelResizeLine", Self::to_lua(Self::PanelResizeLine, lua)?)?;
         order.set("Middle", Self::to_lua(Self::Middle, lua)?)?;
         order.set("Foreground", Self::to_lua(Self::Foreground, lua)?)?;
         order.set("Tooltip", Self::to_lua(Self::Tooltip, lua)?)?;
@@ -2179,11 +2167,11 @@ fn add_window(lua: &Lua, egui_table: &Table) -> Result<()> {
             );
             Ok(())
         });
-        window.add_method_mut("scroll2", |_, this, (hscroll, vscroll): (bool, bool)| {
+        window.add_method_mut("scroll", |_, this, (hscroll, vscroll): (bool, bool)| {
             *this = Some(
                 this.take()
                     .ok_or_else(|| mlua::Error::RuntimeError("window is null".to_owned()))?
-                    .scroll2([hscroll, vscroll]),
+                    .scroll([hscroll, vscroll]),
             );
             Ok(())
         });
@@ -2196,7 +2184,7 @@ fn add_window(lua: &Lua, egui_table: &Table) -> Result<()> {
                 let mut open = true;
                 let mut window_option_open_exists = false;
                 if let Some(open_table) = open_table.as_ref() {
-                    if let Ok(o) = open_table.get::<_, bool>("open") {
+                    if let Ok(o) = open_table.get("open") {
                         open = o;
                         window_option_open_exists = true;
                         window = window.open(&mut open)
