@@ -1,5 +1,10 @@
 use egui::{
-    epaint::Shadow, load::SizedTexture, style::{Spacing, WidgetVisuals}, Align, Align2, Area, CentralPanel, Color32, Context, CornerRadius, Direction, Frame, Id, LayerId, Layout, Margin, Order, PointerButton, Pos2, Rect, RichText, Sense, SidePanel, Stroke, Style, TextStyle, TextureHandle, TopBottomPanel, Ui, Vec2, WidgetText, Window
+    epaint::Shadow,
+    load::SizedTexture,
+    style::{Spacing, WidgetVisuals},
+    Align, Align2, Area, CentralPanel, Color32, Context, CornerRadius, Direction, Frame, Id,
+    LayerId, Layout, Margin, Order, PointerButton, Pos2, Rect, RichText, Sense, SidePanel, Stroke,
+    Style, TextStyle, TextureHandle, TopBottomPanel, Ui, Vec2, WidgetText, Window,
 };
 use mlua::{
     AnyUserData, Function, Lua, MultiValue, Result, Table, UserDataFields, UserDataMethods,
@@ -70,7 +75,7 @@ impl LuaHelperTrait for Id {
     fn from_lua(value: Value) -> Result<Self> {
         Ok(match value {
             Value::Nil => Id::NULL,
-//            Value::String(s) => Id::NULL.with(s.to_str().unwrap_or_default()),
+            Value::String(s) => Id::NULL.with(s.to_string_lossy()),
             Value::UserData(u) => {
                 *u.borrow()
                     .map_err(|_e| mlua::Error::FromLuaConversionError {
@@ -956,7 +961,7 @@ impl LuaHelperTrait for Sense {
                 let i = i as u8;
                 match Sense::from_bits(i) {
                     Some(sense) => Ok(sense),
-                    None => Ok(Sense::empty())
+                    None => Ok(Sense::empty()),
                 }
             }
             _ => Err(mlua::Error::FromLuaConversionError {
@@ -1131,7 +1136,9 @@ impl LuaHelperTrait for CornerRadius {
         let corner_radius = lua.create_table()?;
         corner_radius.set(
             "same",
-            lua.create_function(|lua, radius: u8| CornerRadius::to_lua(CornerRadius::same(radius), lua))?,
+            lua.create_function(|lua, radius: u8| {
+                CornerRadius::to_lua(CornerRadius::same(radius), lua)
+            })?,
         )?;
         corner_radius.set(
             "none",
